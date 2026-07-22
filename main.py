@@ -33,7 +33,7 @@ def check_gold_15m():
     params = {
         "symbol": "XAU/USD",
         "interval": "15min",
-        "outputsize": 5,
+        "outputsize": 10,
         "apikey": TWELVE_DATA_API_KEY
     }
 
@@ -49,42 +49,49 @@ def check_gold_15m():
         return
 
     values = data["values"]
-    if len(values) < 3:
+    if len(values) < 4:
         print("Insufficient candle data.")
         return
 
-    # Twelve Data gives newest closed candle at index 0
-    curr = values[0]
-    p1   = values[1]
-    p2   = values[2]
+    # Twelve Data Candle Indexes:
+    # values[0] = LIVE forming candle (SKIP THIS)
+    # values[1] = Most recently CLOSED candle
+    # values[2] = 1 candle prior
+    # values[3] = 2 candles prior
+    closed_candle = values[1]
+    prev_1        = values[2]
+    prev_2        = values[3]
 
-    curr_close    = float(curr["close"])
-    max_prev_high = max(float(p1["high"]), float(p2["high"]))
-    min_prev_low  = min(float(p1["low"]), float(p2["low"]))
-    candle_time   = curr["datetime"]
+    curr_close    = float(closed_candle["close"])
+    max_prev_high = max(float(prev_1["high"]), float(prev_2["high"]))
+    min_prev_low  = min(float(prev_1["low"]), float(prev_2["low"]))
+    candle_time   = closed_candle["datetime"]
 
-    # Evaluate conditions
+    print(f"Analyzing closed candle at {candle_time} UTC...")
+    print(f"Closed Price: {curr_close} | Max Prev High: {max_prev_high} | Min Prev Low: {min_prev_low}")
+
+    # Evaluate breakout conditions
     if curr_close > max_prev_high:
         msg = (
-            f"🚀 *GOLD (XAU/USD) 15M ALERT*\n\n"
-            f"⏰ *Time:* {candle_time} UTC\n"
-            f"📈 Candle closed **HIGHER** than previous 2 candles high!\n\n"
+            f"🚀 *GOLD (XAU/USD) 15M BREAKOUT*\n\n"
+            f"⏰ *Closed Time:* `{candle_time} UTC`\n"
+            f"📈 Closed **HIGHER** than previous 2 candles high!\n\n"
             f"• *Close:* `${curr_close:.2f}`\n"
-            f"• *Prev Max High:* `${max_prev_high:.2f}`"
+            f"• *Highest High:* `${max_prev_high:.2f}`"
         )
         send_telegram_alert(msg)
     elif curr_close < min_prev_low:
         msg = (
-            f"🔻 *GOLD (XAU/USD) 15M ALERT*\n\n"
-            f"⏰ *Time:* {candle_time} UTC\n"
-            f"📉 Candle closed **LOWER** than previous 2 candles low!\n\n"
+            f"🔻 *GOLD (XAU/USD) 15M BREAKOUT*\n\n"
+            f"⏰ *Closed Time:* `{candle_time} UTC`\n"
+            f"📉 Closed **LOWER** than previous 2 candles low!\n\n"
             f"• *Close:* `${curr_close:.2f}`\n"
-            f"• *Prev Min Low:* `${min_prev_low:.2f}`"
+            f"• *Lowest Low:* `${min_prev_low:.2f}`"
         )
         send_telegram_alert(msg)
     else:
-        print(f"[{candle_time}] Candle closed within range. No alert sent.")
+        print(f"[{candle_time}] Candle closed within range ({min_prev_low:.2f} - {max_prev_high:.2f}). No alert sent.")
 
 if __name__ == "__main__":
     check_gold_15m()
-      
+    
