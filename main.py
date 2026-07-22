@@ -1,5 +1,6 @@
 import os
 import requests
+import time
 from datetime import datetime, timedelta
 
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
@@ -26,6 +27,10 @@ def send_telegram_alert(message: str):
         print(f"Failed to send Telegram message: {e}")
 
 def check_gold_15m():
+    # 1. Wait 12 seconds to ensure Twelve Data API updates its feed
+    print("Waiting 12 seconds for candle feed sync...")
+    time.sleep(12)
+
     if not TWELVE_DATA_API_KEY:
         print("Error: Missing TWELVE_DATA_API_KEY secret.")
         return
@@ -55,21 +60,36 @@ def check_gold_15m():
         print("Insufficient candle data.")
         return
 
-    # Twelve Data Candle Indexes:
-    # values[0] = LIVE forming candle (Skipped)
-    # values[1] = Most recently CLOSED candle
-    # values[2] = 1 candle prior
-    # values[3] = 2 candles prior
-    closed_candle = values[1]
-    prev_1        = values[2]
-    prev_2        = values[3]
+    # 2. Compute exact expected open time for the candle that just closed (PKT)
+    now_pkt = datetime.utcnow() + timedelta(hours=5)
+    minute_offset = now_pkt.minute % 15
+    current_candle_open = now_pkt - timedelta(minutes=minute_offset, seconds=now_pkt.second, microseconds=now_pkt.microseconds)
+    target_closed_candle_open = current_candle_open - timedelta(minutes=15)
+    target_open_str = target_closed_candle_open.strftime("%Y-%m-%d %H:%M:00")
+
+    # 3. Dynamic Indexing: Automatically locate the correct completed candle
+    if values[0]["datetime"] == target_open_str:
+        # Twelve Data hasn't pushed a new live candle yet; values[0] is the closed candle
+        closed_candle = values[0]
+        prev_1        = values[1]
+        prev_2        = values[2]
+    elif values[1]["datetime"] == target_open_str:
+        # Twelve Data created the live forming candle at values[0]; values[1] is the closed candle
+        closed_candle = values[1]
+        prev_1        = values[2]
+        prev_2        = values[3]
+    else:
+        # Fallback to values[1] if timestamps vary slightly
+        closed_candle = values[1]
+        prev_1        = values[2]
+        prev_2        = values[3]
 
     curr_close    = float(closed_candle["close"])
     max_prev_high = max(float(prev_1["high"]), float(prev_2["high"]))
     min_prev_low  = min(float(prev_1["low"]), float(prev_2["low"]))
     
     # Calculate exact Candle CLOSE Time (Open Time + 15 minutes)
-    raw_open_str = closed_candle["datetime"]  # e.g., "2026-07-22 23:45:00"
+    raw_open_str = closed_candle["datetime"]
     dt_open      = datetime.strptime(raw_open_str, "%Y-%m-%d %H:%M:%S")
     dt_close     = dt_open + timedelta(minutes=15)
     
