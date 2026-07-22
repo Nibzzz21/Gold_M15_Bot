@@ -1,6 +1,6 @@
 import os
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime
 
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
 TELEGRAM_BOT_TOKEN  = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -35,6 +35,7 @@ def check_gold_15m():
         "symbol": "XAU/USD",
         "interval": "15min",
         "outputsize": 10,
+        "timezone": "Asia/Karachi",  # Requests Pakistan Standard Time directly from Twelve Data
         "apikey": TWELVE_DATA_API_KEY
     }
 
@@ -67,13 +68,10 @@ def check_gold_15m():
     max_prev_high = max(float(prev_1["high"]), float(prev_2["high"]))
     min_prev_low  = min(float(prev_1["low"]), float(prev_2["low"]))
     
-    # --- Convert UTC string to Pakistan Standard Time (PKT = UTC + 5 hours) ---
-    utc_time_str = closed_candle["datetime"]  # e.g. "2026-07-22 18:45:00"
-    utc_dt = datetime.strptime(utc_time_str, "%Y-%m-%d %H:%M:%S")
-    pkt_dt = utc_dt + timedelta(hours=5)
-    
-    # Format time as: 22-Jul-2026 11:45 PM PKT
-    candle_time_pkt = pkt_dt.strftime("%d-%b-%Y %I:%M %p PKT")
+    # Twelve Data returns datetime directly converted to Pakistan Standard Time
+    raw_time_str = closed_candle["datetime"]  # e.g. "2026-07-22 23:30:00"
+    dt = datetime.strptime(raw_time_str, "%Y-%m-%d %H:%M:%S")
+    candle_time_pkt = dt.strftime("%d-%b-%Y %I:%M %p PKT")
 
     print(f"Analyzing closed candle at {candle_time_pkt}...")
     print(f"Closed Price: {curr_close} | Max Prev High: {max_prev_high} | Min Prev Low: {min_prev_low}")
