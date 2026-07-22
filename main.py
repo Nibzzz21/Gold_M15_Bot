@@ -61,7 +61,9 @@ def check_gold_15m():
         # 2. Compute expected open time for the candle that just closed (PKT)
         now_pkt = datetime.utcnow() + timedelta(hours=5)
         minute_offset = now_pkt.minute % 15
-        current_candle_open = now_pkt - timedelta(minutes=minute_offset, seconds=now_pkt.second, microseconds=now_pkt.microseconds)
+        
+        # Cleanly strip seconds/microseconds and subtract the minute offset
+        current_candle_open = now_pkt.replace(second=0, microsecond=0) - timedelta(minutes=minute_offset)
         target_closed_candle_open = current_candle_open - timedelta(minutes=15)
         target_open_str = target_closed_candle_open.strftime("%Y-%m-%d %H:%M:00")
 
