@@ -98,6 +98,7 @@ def check_gold_15m():
         prev_2        = values[idx + 2]
 
         # Extract prices
+        curr_open  = float(closed_candle["open"])
         curr_close = float(closed_candle["close"])
         curr_high  = float(closed_candle["high"])
         curr_low   = float(closed_candle["low"])
@@ -111,8 +112,8 @@ def check_gold_15m():
         max_prev2_high = max(prev1_high, prev2_high)
         min_prev2_low  = min(prev1_low, prev2_low)
 
-        # Candle range pips: (High - Low) * 10
-        candle_pips = (curr_high - curr_low) * 10.0
+        # Standard candle range pips for inside bar (High - Low) * 10
+        inside_bar_pips = (curr_high - curr_low) * 10.0
 
         # 3. Calculate 50 EMA up to the closed candle
         candles_chrono = values[::-1]
@@ -139,17 +140,17 @@ def check_gold_15m():
         close_time_pkt = dt_close.strftime("%d-%b-%Y %I:%M %p PKT")
 
         print(f"Target candle matched: Opened {raw_open_str} | Closed {close_time_pkt}")
-        print(f"Close: {curr_close} | High: {curr_high} | Low: {curr_low} | 50 EMA: {ema_str}")
+        print(f"Open: {curr_open} | Close: {curr_close} | High: {curr_high} | Low: {curr_low} | 50 EMA: {ema_str}")
 
         # 5. Breakout & Inside Bar Evaluation
         if curr_close > prev1_high:
-            # Bullish Breakout (SL is current candle low)
+            # Bullish Breakout (Distance = Open - Low)
             sl_price = curr_low
-            sl_dist  = abs(curr_close - sl_price)
-            sl_pips  = sl_dist * 10.0
+            pips_dist = abs(curr_open - curr_low)
+            candle_pips = (pips_dist * 10.0) + 5.0
             
-            # Lot size formula: 50 / ((sl_pips * 10) + 50)
-            lot_size = 50.0 / ((sl_pips * 10.0) + 50.0)
+            # Lot size formula: 50 / ((candle_pips * 10) + 50)
+            lot_size = 50.0 / ((candle_pips * 10.0) + 50.0)
 
             msg = (
                 f"⬆️ *GOLD (XAU/USD) 15M BULLISH BREAKOUT*\n\n"
@@ -166,13 +167,13 @@ def check_gold_15m():
             send_telegram_alert(msg)
 
         elif curr_close < prev1_low:
-            # Bearish Breakout (SL is current candle high)
+            # Bearish Breakout (Distance = Open - High)
             sl_price = curr_high
-            sl_dist  = abs(curr_close - sl_price)
-            sl_pips  = sl_dist * 10.0
+            pips_dist = abs(curr_open - curr_high)
+            candle_pips = (pips_dist * 10.0) + 5.0
             
-            # Lot size formula: 50 / ((sl_pips * 10) + 50)
-            lot_size = 50.0 / ((sl_pips * 10.0) + 50.0)
+            # Lot size formula: 50 / ((candle_pips * 10) + 50)
+            lot_size = 50.0 / ((candle_pips * 10.0) + 50.0)
 
             msg = (
                 f"⬇️ *GOLD (XAU/USD) 15M BEARISH BREAKOUT*\n\n"
@@ -199,7 +200,7 @@ def check_gold_15m():
                     f"🔒 Candle is inside the range of previous 2 candles. Trend is most likely to continue.\n\n"
                     f"• *Recent Close:* `${curr_close:.2f}`\n"
                     f"• *Recent Candle Range:* `${curr_low:.2f}` - `${curr_high:.2f}`\n"
-                    f"• *Candle Range Pips:* `{candle_pips:.1f}` pips\n"
+                    f"• *Candle Range Pips:* `{inside_bar_pips:.1f}` pips\n"
                     f"• *Prev 2-Candle Range:* `${min_prev2_low:.2f}` - `${max_prev2_high:.2f}`\n\n"
                     f"📊 *Trend:* {trend_status}"
                 )
