@@ -144,9 +144,9 @@ def check_gold_15m():
 
         # 5. Breakout & Inside Bar Evaluation
         if curr_close > prev1_high:
-            # Bullish Breakout (Distance = Open - Low)
+            # Bullish Breakout: Distance = Close - Low
             sl_price = curr_low
-            pips_dist = abs(curr_open - curr_low)
+            pips_dist = abs(curr_close - curr_low)
             candle_pips = (pips_dist * 10.0) + 5.0
             
             # Lot size formula: 50 / ((candle_pips * 10) + 50)
@@ -167,9 +167,9 @@ def check_gold_15m():
             send_telegram_alert(msg)
 
         elif curr_close < prev1_low:
-            # Bearish Breakout (Distance = Open - High)
+            # Bearish Breakout: Distance = Close - High
             sl_price = curr_high
-            pips_dist = abs(curr_open - curr_high)
+            pips_dist = abs(curr_close - curr_high)
             candle_pips = (pips_dist * 10.0) + 5.0
             
             # Lot size formula: 50 / ((candle_pips * 10) + 50)
