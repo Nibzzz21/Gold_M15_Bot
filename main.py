@@ -70,7 +70,7 @@ def check_gold_15m():
             print("Insufficient candle data returned.")
             return
 
-        # 1. Compute expected open time for the target closed candle (PKT = UTC+5)
+        # 1. Compute expected open time for target closed candle (PKT = UTC+5)
         now_pkt = datetime.now(timezone.utc) + timedelta(hours=5)
         minute_offset = now_pkt.minute % 15
         
@@ -111,9 +111,8 @@ def check_gold_15m():
         max_prev2_high = max(prev1_high, prev2_high)
         min_prev2_low  = min(prev1_low, prev2_low)
 
-        # Candle range pips: ((High - Low) + 1) * 10
-        candle_range_diff = curr_high - curr_low
-        candle_pips = (candle_range_diff + 1.0) * 10.0
+        # Candle range pips: (High - Low) * 10
+        candle_pips = (curr_high - curr_low) * 10.0
 
         # 3. Calculate 50 EMA up to the closed candle
         candles_chrono = values[::-1]
@@ -144,12 +143,12 @@ def check_gold_15m():
 
         # 5. Breakout & Inside Bar Evaluation
         if curr_close > prev1_high:
-            # Bullish Breakout
+            # Bullish Breakout (SL is current candle low)
             sl_price = curr_low
             sl_dist  = abs(curr_close - sl_price)
-            sl_pips  = (sl_dist + 1.0) * 10.0
+            sl_pips  = sl_dist * 10.0
             
-            # Lot size formula: 50 / ((pips * 10) + 50)
+            # Lot size formula: 50 / ((sl_pips * 10) + 50)
             lot_size = 50.0 / ((sl_pips * 10.0) + 50.0)
 
             msg = (
@@ -167,12 +166,12 @@ def check_gold_15m():
             send_telegram_alert(msg)
 
         elif curr_close < prev1_low:
-            # Bearish Breakout
+            # Bearish Breakout (SL is current candle high)
             sl_price = curr_high
             sl_dist  = abs(curr_close - sl_price)
-            sl_pips  = (sl_dist + 1.0) * 10.0
+            sl_pips  = sl_dist * 10.0
             
-            # Lot size formula: 50 / ((pips * 10) + 50)
+            # Lot size formula: 50 / ((sl_pips * 10) + 50)
             lot_size = 50.0 / ((sl_pips * 10.0) + 50.0)
 
             msg = (
@@ -214,4 +213,4 @@ def check_gold_15m():
 
 if __name__ == "__main__":
     check_gold_15m()
-    
+        
