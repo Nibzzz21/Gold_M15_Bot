@@ -2,7 +2,7 @@ import os
 import requests
 import time
 import traceback
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
 TELEGRAM_BOT_TOKEN  = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -27,12 +27,21 @@ def send_telegram_alert(message: str):
     except Exception as e:
         print(f"Failed to send Telegram message: {e}")
 
+def calculate_ema50(candles_chronological: list) -> float:
+    closes = [float(c["close"]) for c in candles_chronological]
+    if len(closes) < 50:
+        return None
+
+    ema = sum(closes[:50]) / 50.0
+    multiplier = 2 / (50 + 1)
+
+    for price in closes[50:]:
+        ema = (price - ema) * multiplier + ema
+
+    return ema
+
 def check_gold_15m():
     try:
-        # 1. Wait 12 seconds to ensure Twelve Data API syncs new candle
-        print("Waiting 12 seconds for candle feed sync...")
-        time.sleep(12)
-
         if not TWELVE_DATA_API_KEY:
             print("Error: Missing TWELVE_DATA_API_KEY secret.")
             return
@@ -41,7 +50,7 @@ def check_gold_15m():
         params = {
             "symbol": "XAU/USD",
             "interval": "15min",
-            "outputsize": 10,
+            "outputsize": 80,
             "timezone": "Asia/Karachi",
             "apikey": TWELVE_DATA_API_KEY
         }
@@ -54,75 +63,163 @@ def check_gold_15m():
             return
 
         values = data["values"]
-        if len(values) < 4:
+        if len(values) < 60:
             print("Insufficient candle data returned.")
             return
 
-        # 2. Compute expected open time for the candle that just closed (PKT)
-        now_pkt = datetime.utcnow() + timedelta(hours=5)
+        # 1. Compute expected open time for the target closed candle (PKT = UTC+5)
+        now_pkt = datetime.now(timezone.utc) + timedelta(hours=5)
         minute_offset = now_pkt.minute % 15
         
-        # Cleanly strip seconds/microseconds and subtract the minute offset
         current_candle_open = now_pkt.replace(second=0, microsecond=0) - timedelta(minutes=minute_offset)
         target_closed_candle_open = current_candle_open - timedelta(minutes=15)
         target_open_str = target_closed_candle_open.strftime("%Y-%m-%d %H:%M:00")
 
-        # 3. Match candle index accurately
-        if values[0].get("datetime") == target_open_str:
-            closed_candle = values[0]
-            prev_1        = values[1]
-            prev_2        = values[2]
-        else:
-            closed_candle = values[1]
-            prev_1        = values[2]
-            prev_2        = values[3]
+        # 2. Dynamic Match: Search values for the exact target closed candle timestamp
+        idx = None
+        for i, candle in enumerate(values):
+            if candle.get("datetime") == target_open_str:
+                idx = i
+                break
 
-        curr_close    = float(closed_candle["close"])
-        max_prev_high = max(float(prev_1["high"]), float(prev_2["high"]))
-        min_prev_low  = min(float(prev_1["low"]), float(prev_2["low"]))
+        if idx is None:
+            print(f"Target closed candle ({target_open_str}) not yet synced in Twelve Data feed.")
+            return
+
+        if idx + 2 >= len(values):
+            print("Not enough historic candles returned after target candle.")
+            return
+
+        closed_candle = values[idx]
+        prev_1        = values[idx + 1]
+        prev_2        = values[idx + 2]
+
+        # Extract prices
+        curr_close = float(closed_candle["close"])
+        curr_high  = float(closed_candle["high"])
+        curr_low   = float(closed_candle["low"])
+
+        prev1_high = float(prev_1["high"])
+        prev1_low  = float(prev_1["low"])
+
+        prev2_high = float(prev_2["high"])
+        prev2_low  = float(prev_2["low"])
+
+        max_prev2_high = max(prev1_high, prev2_high)
+        min_prev2_low  = min(prev1_low, prev2_low)
+
+        # 3. Calculate 50 EMA up to the closed candle
+        candles_chrono = values[::-1]
+        target_chrono_idx = len(values) - 1 - idx
+        relevant_history = candles_chrono[:target_chrono_idx + 1]
+
+        ema_50 = calculate_ema50(relevant_history)
         
+        if ema_50 is not None:
+            if curr_close > ema_50:
+                trend_status = f"🟢 Bullish Trend (Above 50 EMA @ `${ema_50:.2f}`)"
+            else:
+                trend_status = f"🔴 Bearish Trend (Below 50 EMA @ `${ema_50:.2f}`)"
+        else:
+            trend_status = "⚠️ N/A (Insufficient history for EMA)"
+
         # 4. Format Close Time
         raw_open_str = closed_candle["datetime"]
         dt_open      = datetime.strptime(raw_open_str, "%Y-%m-%d %H:%M:%S")
         dt_close     = dt_open + timedelta(minutes=15)
         close_time_pkt = dt_close.strftime("%d-%b-%Y %I:%M %p PKT")
 
-        print(f"Analyzing candle that closed at {close_time_pkt}...")
-        print(f"Closed Price: {curr_close} | Max Prev High: {max_prev_high} | Min Prev Low: {min_prev_low}")
+        print(f"Target candle matched: Opened {raw_open_str} | Closed {close_time_pkt}")
+        print(f"Close: {curr_close} | Prev High: {prev1_high} | Prev Low: {prev1_low} | 50 EMA: {ema_50:.2f if ema_50 else 'N/A'}")
 
-        # 5. Send Telegram alert
-        if curr_close > max_prev_high:
+        # 5. Breakout & Inside Bar Evaluation
+        if curr_close > prev1_high:
             msg = (
-                f"🚀 *GOLD (XAU/USD) 15M BREAKOUT*\n\n"
+                f"⬆️ *GOLD (XAU/USD) 15M BULLISH BREAKOUT*\n\n"
                 f"⏰ *Candle Closed At:* `{close_time_pkt}`\n"
-                f"📈 Closed **HIGHER** than previous 2 candles high!\n\n"
-                f"• *Close:* `${curr_close:.2f}`\n"
-                f"• *Highest High:* `${max_prev_high:.2f}`"
+                f"📈 Closed **ABOVE** previous candle high!\n\n"
+                f"• *Recent Close:* `${curr_close:.2f}`\n"
+                f"• *Prev Candle High:* `${prev1_high:.2f}`\n"
+                f"• *Prev Candle Low:* `${prev1_low:.2f}`\n"
+                f"• *Prev Range:* `${prev1_low:.2f}` - `${prev1_high:.2f}`\n"
+                f"• *Stop Loss (SL):* `${curr_low:.2f}`\n\n"
+                f"📊 *Trend:* {trend_status}"
             )
             send_telegram_alert(msg)
-        elif curr_close < min_prev_low:
+
+        elif curr_close < prev1_low:
             msg = (
-                f"🔻 *GOLD (XAU/USD) 15M BREAKOUT*\n\n"
+                f"⬇️ *GOLD (XAU/USD) 15M BEARISH BREAKOUT*\n\n"
                 f"⏰ *Candle Closed At:* `{close_time_pkt}`\n"
-                f"📉 Closed **LOWER** than previous 2 candles low!\n\n"
-                f"• *Close:* `${curr_close:.2f}`\n"
-                f"• *Lowest Low:* `${min_prev_low:.2f}`"
+                f"📉 Closed **BELOW** previous candle low!\n\n"
+                f"• *Recent Close:* `${curr_close:.2f}`\n"
+                f"• *Prev Candle High:* `${prev1_high:.2f}`\n"
+                f"• *Prev Candle Low:* `${prev1_low:.2f}`\n"
+                f"• *Prev Range:* `${prev1_low:.2f}` - `${prev1_high:.2f}`\n"
+                f"• *Stop Loss (SL):* `${curr_high:.2f}`\n\n"
+                f"📊 *Trend:* {trend_status}"
             )
             send_telegram_alert(msg)
+
         else:
-            msg = (
-                f"⚪ *GOLD (XAU/USD) 15M RANGE*\n\n"
-                f"⏰ *Candle Closed At:* `{close_time_pkt}`\n"
-                f"↔️ Candle closed **WITHIN RANGE** (No breakout).\n\n"
-                f"• *Close:* `${curr_close:.2f}`\n"
-                f"• *Range:* `${min_prev_low:.2f}` - `${max_prev_high:.2f}`"
-            )
-            send_telegram_alert(msg)
+            is_inside_bar = (curr_high <= max_prev2_high) and (curr_low >= min_prev2_low)
+
+            if is_inside_bar:
+                msg = (
+                    f"📦 *GOLD (XAU/USD) 15M INSIDE BAR*\n\n"
+                    f"⏰ *Candle Closed At:* `{close_time_pkt}`\n"
+                    f"🔒 Candle is inside the range of previous 2 candles. Trend is most likely to continue.\n\n"
+                    f"• *Recent Close:* `${curr_close:.2f}`\n"
+                    f"• *Prev 2-Candle Range:* `${min_prev2_low:.2f}` - `${max_prev2_high:.2f}`\n\n"
+                    f"📊 *Trend:* {trend_status}"
+                )
+                send_telegram_alert(msg)
+            else:
+                print("Candle closed within range. No Telegram alert sent.")
 
     except Exception as err:
         print("An error occurred during execution:")
         traceback.print_exc()
 
-if __name__ == "__main__":
-    check_gold_15m()
+def get_seconds_until_next_run(lead_seconds: int = 15) -> float:
+    """
+    Calculates exact sleep time until the next 15-min mark + lead_seconds delay.
+    Target times: :00:15, :15:15, :30:15, :45:15.
+    """
+    now = datetime.now(timezone.utc)
+    minute_offset = now.minute % 15
+    current_interval_start = now.replace(second=0, microsecond=0) - timedelta(minutes=minute_offset)
     
+    # Target execution time for current interval
+    target_time = current_interval_start + timedelta(seconds=lead_seconds)
+    
+    # If target time for current interval has passed, target the next interval (+15 mins)
+    if now >= target_time:
+        target_time += timedelta(minutes=15)
+        
+    return (target_time - now).total_seconds()
+
+def main():
+    print("Gold 15M Monitor started. Synchronizing with 15-minute candle intervals...")
+    while True:
+        try:
+            sleep_time = get_seconds_until_next_run(lead_seconds=15)
+            next_run = datetime.now(timezone.utc) + timedelta(seconds=sleep_time)
+            next_run_pkt = next_run + timedelta(hours=5)
+            
+            print(f"\nNext check scheduled at {next_run_pkt.strftime('%H:%M:%S PKT')} (sleeping for {int(sleep_time)}s)...")
+            time.sleep(sleep_time)
+            
+            print(f"Waking up at {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')} to analyze completed candle...")
+            check_gold_15m()
+            
+        except KeyboardInterrupt:
+            print("\nMonitor stopped manually.")
+            break
+        except Exception as e:
+            print(f"Unexpected error in main loop: {e}")
+            time.sleep(10)  # Brief pause before retrying loop
+
+if __name__ == "__main__":
+    main()
+            
