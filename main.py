@@ -42,7 +42,6 @@ def calculate_ema50(candles_chronological: list) -> float:
 
 def check_gold_15m():
     try:
-        # Short 12s delay to ensure Twelve Data API feed syncs after candle close
         print("Waiting 12 seconds for candle feed sync...")
         time.sleep(12)
 
@@ -119,12 +118,15 @@ def check_gold_15m():
 
         ema_50 = calculate_ema50(relevant_history)
         
+        # Safely format EMA display string before using in outputs
         if ema_50 is not None:
+            ema_str = f"${ema_50:.2f}"
             if curr_close > ema_50:
-                trend_status = f"🟢 Bullish Trend (Above 50 EMA @ `${ema_50:.2f}`)"
+                trend_status = f"🟢 Bullish Trend (Above 50 EMA @ {ema_str})"
             else:
-                trend_status = f"🔴 Bearish Trend (Below 50 EMA @ `${ema_50:.2f}`)"
+                trend_status = f"🔴 Bearish Trend (Below 50 EMA @ {ema_str})"
         else:
+            ema_str = "N/A"
             trend_status = "⚠️ N/A (Insufficient history for EMA)"
 
         # 4. Format Close Time
@@ -134,7 +136,7 @@ def check_gold_15m():
         close_time_pkt = dt_close.strftime("%d-%b-%Y %I:%M %p PKT")
 
         print(f"Target candle matched: Opened {raw_open_str} | Closed {close_time_pkt}")
-        print(f"Close: {curr_close} | Prev High: {prev1_high} | Prev Low: {prev1_low} | 50 EMA: {ema_50:.2f if ema_50 else 'N/A'}")
+        print(f"Close: {curr_close} | Prev High: {prev1_high} | Prev Low: {prev1_low} | 50 EMA: {ema_str}")
 
         # 5. Breakout & Inside Bar Evaluation
         if curr_close > prev1_high:
@@ -187,4 +189,4 @@ def check_gold_15m():
 
 if __name__ == "__main__":
     check_gold_15m()
-        
+    
