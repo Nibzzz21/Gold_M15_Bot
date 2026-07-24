@@ -111,6 +111,10 @@ def check_gold_15m():
         max_prev2_high = max(prev1_high, prev2_high)
         min_prev2_low  = min(prev1_low, prev2_low)
 
+        # Candle range pips: ((High - Low) + 1) * 10
+        candle_range_diff = curr_high - curr_low
+        candle_pips = (candle_range_diff + 1.0) * 10.0
+
         # 3. Calculate 50 EMA up to the closed candle
         candles_chrono = values[::-1]
         target_chrono_idx = len(values) - 1 - idx
@@ -118,7 +122,7 @@ def check_gold_15m():
 
         ema_50 = calculate_ema50(relevant_history)
         
-        # Safely format EMA display string before using in outputs
+        # Safely format EMA display string
         if ema_50 is not None:
             ema_str = f"${ema_50:.2f}"
             if curr_close > ema_50:
@@ -136,38 +140,57 @@ def check_gold_15m():
         close_time_pkt = dt_close.strftime("%d-%b-%Y %I:%M %p PKT")
 
         print(f"Target candle matched: Opened {raw_open_str} | Closed {close_time_pkt}")
-        print(f"Close: {curr_close} | Prev High: {prev1_high} | Prev Low: {prev1_low} | 50 EMA: {ema_str}")
+        print(f"Close: {curr_close} | High: {curr_high} | Low: {curr_low} | 50 EMA: {ema_str}")
 
         # 5. Breakout & Inside Bar Evaluation
         if curr_close > prev1_high:
+            # Bullish Breakout
+            sl_price = curr_low
+            sl_dist  = abs(curr_close - sl_price)
+            sl_pips  = (sl_dist + 1.0) * 10.0
+            
+            # Lot size formula: 50 / ((pips * 10) + 50)
+            lot_size = 50.0 / ((sl_pips * 10.0) + 50.0)
+
             msg = (
                 f"⬆️ *GOLD (XAU/USD) 15M BULLISH BREAKOUT*\n\n"
                 f"⏰ *Candle Closed At:* `{close_time_pkt}`\n"
                 f"📈 Closed **ABOVE** previous candle high!\n\n"
                 f"• *Recent Close:* `${curr_close:.2f}`\n"
-                f"• *Prev Candle High:* `${prev1_high:.2f}`\n"
-                f"• *Prev Candle Low:* `${prev1_low:.2f}`\n"
-                f"• *Prev Range:* `${prev1_low:.2f}` - `${prev1_high:.2f}`\n"
-                f"• *Stop Loss (SL):* `${curr_low:.2f}`\n\n"
+                f"• *Prev High Broken:* `${prev1_high:.2f}`\n"
+                f"• *Recent Candle Range:* `${curr_low:.2f}` - `${curr_high:.2f}`\n"
+                f"• *Candle Range Pips:* `{candle_pips:.1f}` pips\n"
+                f"• *Stop Loss (SL):* `${sl_price:.2f}`\n"
+                f"• *Recommended Lot Size ($50 Risk):* `{lot_size:.2f}` lots\n\n"
                 f"📊 *Trend:* {trend_status}"
             )
             send_telegram_alert(msg)
 
         elif curr_close < prev1_low:
+            # Bearish Breakout
+            sl_price = curr_high
+            sl_dist  = abs(curr_close - sl_price)
+            sl_pips  = (sl_dist + 1.0) * 10.0
+            
+            # Lot size formula: 50 / ((pips * 10) + 50)
+            lot_size = 50.0 / ((sl_pips * 10.0) + 50.0)
+
             msg = (
                 f"⬇️ *GOLD (XAU/USD) 15M BEARISH BREAKOUT*\n\n"
                 f"⏰ *Candle Closed At:* `{close_time_pkt}`\n"
                 f"📉 Closed **BELOW** previous candle low!\n\n"
                 f"• *Recent Close:* `${curr_close:.2f}`\n"
-                f"• *Prev Candle High:* `${prev1_high:.2f}`\n"
-                f"• *Prev Candle Low:* `${prev1_low:.2f}`\n"
-                f"• *Prev Range:* `${prev1_low:.2f}` - `${prev1_high:.2f}`\n"
-                f"• *Stop Loss (SL):* `${curr_high:.2f}`\n\n"
+                f"• *Prev Low Broken:* `${prev1_low:.2f}`\n"
+                f"• *Recent Candle Range:* `${curr_low:.2f}` - `${curr_high:.2f}`\n"
+                f"• *Candle Range Pips:* `{candle_pips:.1f}` pips\n"
+                f"• *Stop Loss (SL):* `${sl_price:.2f}`\n"
+                f"• *Recommended Lot Size ($50 Risk):* `{lot_size:.2f}` lots\n\n"
                 f"📊 *Trend:* {trend_status}"
             )
             send_telegram_alert(msg)
 
         else:
+            # Check if Inside Bar relative to previous 2 candles
             is_inside_bar = (curr_high <= max_prev2_high) and (curr_low >= min_prev2_low)
 
             if is_inside_bar:
@@ -176,6 +199,8 @@ def check_gold_15m():
                     f"⏰ *Candle Closed At:* `{close_time_pkt}`\n"
                     f"🔒 Candle is inside the range of previous 2 candles. Trend is most likely to continue.\n\n"
                     f"• *Recent Close:* `${curr_close:.2f}`\n"
+                    f"• *Recent Candle Range:* `${curr_low:.2f}` - `${curr_high:.2f}`\n"
+                    f"• *Candle Range Pips:* `{candle_pips:.1f}` pips\n"
                     f"• *Prev 2-Candle Range:* `${min_prev2_low:.2f}` - `${max_prev2_high:.2f}`\n\n"
                     f"📊 *Trend:* {trend_status}"
                 )
