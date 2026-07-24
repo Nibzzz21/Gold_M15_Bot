@@ -42,6 +42,10 @@ def calculate_ema50(candles_chronological: list) -> float:
 
 def check_gold_15m():
     try:
+        # Short 12s delay to ensure Twelve Data API feed syncs after candle close
+        print("Waiting 12 seconds for candle feed sync...")
+        time.sleep(12)
+
         if not TWELVE_DATA_API_KEY:
             print("Error: Missing TWELVE_DATA_API_KEY secret.")
             return
@@ -75,7 +79,7 @@ def check_gold_15m():
         target_closed_candle_open = current_candle_open - timedelta(minutes=15)
         target_open_str = target_closed_candle_open.strftime("%Y-%m-%d %H:%M:00")
 
-        # 2. Dynamic Match: Search values for the exact target closed candle timestamp
+        # 2. Match exact closed candle
         idx = None
         for i, candle in enumerate(values):
             if candle.get("datetime") == target_open_str:
@@ -181,45 +185,6 @@ def check_gold_15m():
         print("An error occurred during execution:")
         traceback.print_exc()
 
-def get_seconds_until_next_run(lead_seconds: int = 15) -> float:
-    """
-    Calculates exact sleep time until the next 15-min mark + lead_seconds delay.
-    Target times: :00:15, :15:15, :30:15, :45:15.
-    """
-    now = datetime.now(timezone.utc)
-    minute_offset = now.minute % 15
-    current_interval_start = now.replace(second=0, microsecond=0) - timedelta(minutes=minute_offset)
-    
-    # Target execution time for current interval
-    target_time = current_interval_start + timedelta(seconds=lead_seconds)
-    
-    # If target time for current interval has passed, target the next interval (+15 mins)
-    if now >= target_time:
-        target_time += timedelta(minutes=15)
-        
-    return (target_time - now).total_seconds()
-
-def main():
-    print("Gold 15M Monitor started. Synchronizing with 15-minute candle intervals...")
-    while True:
-        try:
-            sleep_time = get_seconds_until_next_run(lead_seconds=15)
-            next_run = datetime.now(timezone.utc) + timedelta(seconds=sleep_time)
-            next_run_pkt = next_run + timedelta(hours=5)
-            
-            print(f"\nNext check scheduled at {next_run_pkt.strftime('%H:%M:%S PKT')} (sleeping for {int(sleep_time)}s)...")
-            time.sleep(sleep_time)
-            
-            print(f"Waking up at {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')} to analyze completed candle...")
-            check_gold_15m()
-            
-        except KeyboardInterrupt:
-            print("\nMonitor stopped manually.")
-            break
-        except Exception as e:
-            print(f"Unexpected error in main loop: {e}")
-            time.sleep(10)  # Brief pause before retrying loop
-
 if __name__ == "__main__":
-    main()
-            
+    check_gold_15m()
+        
