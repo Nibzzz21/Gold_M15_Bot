@@ -8,6 +8,33 @@ TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
 TELEGRAM_BOT_TOKEN  = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID    = os.getenv("TELEGRAM_CHAT_ID")
 
+def is_market_open() -> bool:
+    """
+    Checks if the XAU/USD (Gold) market is currently open.
+    Gold / Forex Hours in UTC:
+    - Opens: Sunday 21:00 UTC (Monday 02:00 AM PKT)
+    - Closes: Friday 21:00 UTC (Saturday 02:00 AM PKT)
+    - Daily Maintenance Break: Mon-Thu 21:00 to 22:00 UTC (02:00 AM to 03:00 AM PKT)
+    """
+    now_utc = datetime.now(timezone.utc)
+    weekday = now_utc.weekday()  # Monday = 0, Sunday = 6
+    hour = now_utc.hour
+
+    # Saturday: Closed all day
+    if weekday == 5:
+        return False
+    # Sunday: Closed before 21:00 UTC
+    if weekday == 6 and hour < 21:
+        return False
+    # Friday: Closed after 21:00 UTC
+    if weekday == 4 and hour >= 21:
+        return False
+    # Mon-Thu Daily Break (21:00 to 22:00 UTC)
+    if weekday in [0, 1, 2, 3] and hour == 21:
+        return False
+
+    return True
+
 def send_telegram_alert(message: str):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("Error: Missing Telegram secrets.")
@@ -41,6 +68,11 @@ def calculate_ema50(candles_chronological: list) -> float:
     return ema
 
 def check_gold_15m():
+    # 0. Check if market is open before running anything
+    if not is_market_open():
+        print("Market is currently closed. Skipping candle checks and Telegram alerts.")
+        return
+
     try:
         print("Waiting 12 seconds for candle feed sync...")
         time.sleep(12)
